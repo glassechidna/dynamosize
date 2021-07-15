@@ -1,0 +1,87 @@
+# this file unfortunately exists because service-managed stack sets don't support
+# transforms (like the AWS SAM transform)
+
+Resources:
+  Reporter:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import time
+
+          api = boto3.client('dynamodb')
+
+          def handler(a, b):
+            api = boto3.client('dynamodb')
+            p = api.get_paginator('list_tables')
+            tables = list(p.paginate().search("TableNames"))
+
+            for table in tables:
+                description = api.describe_table(TableName=table)
+                itemCount = description['Table']['ItemCount']
+                tableSize = description['Table']['TableSizeBytes']
+                metric(table, itemCount, tableSize)
+
+          def metric(table, count, size):
+              print(json.dumps({
+                  "_aws": {
+                      "Timestamp": round(time.time() * 1000),
+                      "CloudWatchMetrics": [
+                          {
+                              "Namespace": "dynamosize",
+                              "Dimensions": [["TableName"]],
+                              "Metrics": [
+                                  {"Name": "ItemCount", "Unit": "Count"},
+                                  {"Name": "TableSize", "Unit": "Bytes"}
+                              ]
+                          }
+                      ]
+                  },
+                  "TableName": table,
+                  "ItemCount": count,
+                  "TableSize": size
+              }))
+      Handler: index.handler
+      Role: !GetAtt Role.Arn
+      Timeout: 30
+      Runtime: python3.8
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ReporterRolePolicy0
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - dynamodb:ListTables
+                  - dynamodb:DescribeTable
+                Resource: "*"
+                Effect: Allow
+
+  Schedule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: rate(1 hour)
+      Targets:
+        - Id: ReporterScheduleLambdaTarget
+          Arn: !GetAtt Reporter.Arn
+
+  Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      FunctionName: !Ref Reporter
+      SourceArn: !GetAtt Schedule.Arn
