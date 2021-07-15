@@ -25,4 +25,4 @@ then click the _Deploy_ button.
 [console]: https://console.aws.amazon.com/lambda/home?region=us-east-1#/create/app?applicationId=arn:aws:serverlessrepo:us-east-1:607481581596:applications/dynamosize
 
 I personally deploy the above CloudFormation template to all accounts and regions
-in my AWS org using service-managed CloudFormation stack sets.
+in my AWS org using CloudFormation stack sets.
