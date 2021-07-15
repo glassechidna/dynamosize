@@ -1,0 +1,70 @@
+Transform: AWS::Serverless-2016-10-31
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: dynamosize
+    Description: AWS DynamoDB table sizes aren't reported to CloudWatch. This fixes that.
+    SemanticVersion: "0.1.0"
+    Author: Glass Echidna
+    LicenseUrl: LICENSE.txt
+    ReadmeUrl: README.md
+    Labels: ['dynamodb', 'cloudwatch', 'metrics']
+    HomePageUrl: https://github.com/glassechidna/dynamosize
+    SourceCodeUrl: https://github.com/glassechidna/dynamosize
+
+Resources:
+  Reporter:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.8
+      Handler: index.handler
+      Timeout: 30
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 hour)
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:ListTables
+              Resource: "*"
+        - DynamoDBReadPolicy:
+            TableName: "*"
+      InlineCode: |
+        import boto3
+        import json
+        import time
+
+        api = boto3.client('dynamodb')
+
+        def handler(a, b):
+          api = boto3.client('dynamodb')
+          p = api.get_paginator('list_tables')
+          tables = list(p.paginate().search("TableNames"))
+
+          for table in tables:
+              description = api.describe_table(TableName=table)
+              itemCount = description['Table']['ItemCount']
+              tableSize = description['Table']['TableSizeBytes']
+              metric(table, itemCount, tableSize)
+
+        def metric(table, count, size):
+            print(json.dumps({
+                "_aws": {
+                    "Timestamp": round(time.time() * 1000),
+                    "CloudWatchMetrics": [
+                        {
+                            "Namespace": "dynamosize",
+                            "Dimensions": [["TableName"]],
+                            "Metrics": [
+                                {"Name": "ItemCount", "Unit": "Count"},
+                                {"Name": "TableSize", "Unit": "Bytes"}
+                            ]
+                        }
+                    ]
+                },
+                "TableName": table,
+                "ItemCount": count,
+                "TableSize": size
+            }))
