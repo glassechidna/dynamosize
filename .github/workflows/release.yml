@@ -23,7 +23,7 @@ jobs:
             sam package
             --template-file cfn.yml
             --output-template-file packaged.yml
-            --s3-bucket SERVERLESSREPO_BUCKET
+            --s3-bucket $SERVERLESSREPO_BUCKET
             "
 
       - name: sam publish
